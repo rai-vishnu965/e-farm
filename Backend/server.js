@@ -39,9 +39,6 @@ mongoose.connect(MONGODB_URI)
   });
 
 // Schemas (Replacing MySQL Tables)
-// ... (rest of the file remains the same)
-
-// Schemas (Replacing MySQL Tables)
 const { Schema } = mongoose;
 
 const UserSchema = new Schema({
@@ -371,7 +368,8 @@ app.get('/cart', authenticateToken, async (req, res) => {
         .populate('product_id');
 
     const cartFormatted = cartItems
-        .filter(item => item.product_id !== null)
+        // NEW: Filter out items that are null OR have been marked as sold
+        .filter(item => item.product_id !== null && item.product_id.sold === false) 
         .map(item => {
             const p = item.product_id.toObject();
             return {
@@ -497,7 +495,15 @@ app.post('/orders', authenticateToken, async (req, res) => {
     });
     const orderResult = await newOrder.save();
 
-    // 5. Clear the cart
+    // --- NEW: 5. Mark all ordered products as sold ---
+    const productIdsToMarkSold = cartItems.map(item => item.product_id._id);
+    await Product.updateMany(
+        { _id: { $in: productIdsToMarkSold } },
+        { $set: { sold: true } }
+    );
+    // --------------------------------------------------
+
+    // 6. Clear the cart
     await CartItem.deleteMany({ user_id: userId });
 
     res.status(201).json({ message: 'Order placed successfully!', orderId: orderResult._id.toString() });
@@ -571,4 +577,3 @@ app.post('/orders/confirm-delivery', async (req, res) => {
 app.listen(port, () => {
     console.log(`E-Farm server listening at port ${port}`);
 });
-
