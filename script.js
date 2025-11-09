@@ -249,7 +249,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
 
   // ==================================
-  // === NEW: Place Order Button Logic ===
+  // === NEW: Place Order Button Logic (Cash on Delivery) ===
   // ==================================
   document.getElementById('place-order-btn').onclick = async function() {
     const btn = this;
@@ -271,7 +271,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       const data = await response.json();
 
       if (response.ok) {
-        showCustomAlert('Order placed successfully!');
+        showCustomAlert('Order placed successfully! You will pay the total amount upon delivery.');
         updateCartCount(); // This will refresh the count to (0)
         renderCart(); // This will refresh the cart to show "Your cart is empty"
       } else {
@@ -287,28 +287,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   };
 
-  // NEW: Payment method toggle logic
-  document.querySelectorAll('input[name="paymentMethod"]').forEach(radio => {
-    radio.onchange = function() {
-      if (this.value === 'card') {
-        document.getElementById('paymentForm').style.display = 'block';
-        document.getElementById('upi-qr-payment').style.display = 'none';
-      } else {
-        document.getElementById('paymentForm').style.display = 'none';
-        document.getElementById('upi-qr-payment').style.display = 'block';
-      }
-    };
-  });
-
-  // NEW: UPI Payment confirmation logic
-  document.getElementById('confirm-upi-payment').onclick = function() {
-    const paymentMsg = document.getElementById('paymentMsg');
-    paymentMsg.style.color = '#357a38';
-    paymentMsg.textContent = 'Payment successful (via UPI)! Products are now marked as SOLD.';
-    // NOTE: You still need to create the `processSuccessfulPayment` function
-    // processSuccessfulPayment();
-  };
-
+  // NOTE: Incomplete payment logic removed here to simplify checkout to COD.
+  
   // NEW: Gemini Button Event Listener
   document.getElementById('generateDescBtn').onclick = async function() {
     const btn = this;
@@ -664,7 +644,7 @@ async function renderProducts() {
         </div>
         <div>${p.description}</div>
         <div>
-          <span classZ="price-tag">₹${effectivePrice.toLocaleString('en-IN')}</span>
+          <span class="price-tag">₹${effectivePrice.toLocaleString('en-IN')}</span>
           ${p.discount > 0 ? `<span class="discount-tag">${p.discount}% OFF</span>` : ''}
           <span class="delivery-tag">⏱️ ${p.deliveryDays} days delivery</span>
         </div>
@@ -927,3 +907,9 @@ async function renderMyOrders() {
   }
 }
 
+// NEW: Handle Contact Form Submission (Prevent reload and show alert)
+document.getElementById('contactForm').onsubmit = function(e) {
+  e.preventDefault();
+  showCustomAlert('Thank you for your message! We will get back to you soon.');
+  this.reset();
+};
