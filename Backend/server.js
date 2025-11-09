@@ -1,6 +1,6 @@
-// --- 1. IMPORTS (All at the top) ---
+// --- 1. IMPORTS (Updated for MongoDB) ---
 const express = require('express');
-const mysql = require('mysql2/promise');
+const mongoose = require('mongoose'); // NEW: Mongoose for MongoDB
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const axios = require('axios');
@@ -8,25 +8,83 @@ const cors = require('cors');
 
 // --- 2. APP INITIALIZATION ---
 const app = express();
-const port = 3000;
+// Use Render's PORT environment variable, default to 3000 locally
+const port = process.env.PORT || 3000; 
 
 // --- 3. MIDDLEWARE (The "Rules") ---
-// These MUST come BEFORE your routes (app.post, app.get)
-// Increase the payload limit to 50mb
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
-app.use(cors());         // Allows your frontend to connect
+app.use(cors());
 
-// --- 4. DATABASE CONNECTION ---
-const dbPool = mysql.createPool({
-    host: 'localhost',
-    user: 'root',
-    password: 'Vishwa@123', // <-- Your password
-    database: 'efarm_db'
+// --- 4. MONGODB CONNECTION & SCHEMAS ---
+
+// Use MONGODB_URI environment variable provided by Render or MongoDB Atlas
+const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/efarm_db';
+
+mongoose.connect(MONGODB_URI)
+  .then(() => console.log('MongoDB Connected!'))
+  .catch(err => console.error('MongoDB connection error:', err));
+
+// Schemas (Replacing MySQL Tables)
+const { Schema } = mongoose;
+
+const UserSchema = new Schema({
+    username: { type: String, required: true, unique: true },
+    password_hash: { type: String, required: true },
+    created_at: { type: Date, default: Date.now }
+});
+const User = mongoose.model('User', UserSchema);
+
+const ProductSchema = new Schema({
+    // NEW: Link to User _id (ObjectId)
+    user_id: { type: Schema.Types.ObjectId, ref: 'User' }, 
+    sellerName: { type: String, required: true },
+    contactInfo: { type: String, required: true },
+    district: { type: String, required: true },
+    category: { type: String, required: true },
+    productName: { type: String, required: true },
+    description: String,
+    price: { type: Number, required: true },
+    deliveryDays: { type: Number, required: true },
+    discount: { type: Number, default: 0 },
+    image: String,
+    created_at: { type: Date, default: Date.now },
+    reviews: { type: Array, default: [] },
+    rating: { type: Number, default: 0 },
+    sold: { type: Boolean, default: false } 
+});
+const Product = mongoose.model('Product', ProductSchema);
+
+const CartItemSchema = new Schema({
+    user_id: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+    product_id: { type: Schema.Types.ObjectId, ref: 'Product', required: true },
+    created_at: { type: Date, default: Date.now }
+}, {
+    // Enforce unique combination of user_id and product_id
+    unique: { fields: ['user_id', 'product_id'] }
+});
+const CartItem = mongoose.model('CartItem', CartItemSchema);
+
+const OrderItemSchema = new Schema({
+    productName: String,
+    image: String,
+    quantity: { type: Number, default: 1 },
+    price: { type: Number, required: true }
 });
 
+const OrderSchema = new Schema({
+    user_id: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+    total_price: { type: Number, required: true },
+    status: { type: String, default: 'Pending' },
+    delivery_pin: { type: String, required: true },
+    created_at: { type: Date, default: Date.now },
+    items: [OrderItemSchema] // Embedded order item documents
+});
+const Order = mongoose.model('Order', OrderSchema);
+
+
 // --- 5. JWT SECRET ---
-const JWT_SECRET = 'your-super-secret-key-for-e-farm';
+const JWT_SECRET = process.env.JWT_SECRET || 'your-super-secret-key-for-e-farm';
 
 // --- 6. AUTHENTICATION "GATEKEEPER" MIDDLEWARE ---
 const authenticateToken = (req, res, next) => {
@@ -41,12 +99,13 @@ const authenticateToken = (req, res, next) => {
         if (err) {
             return res.status(403).json({ message: 'Invalid token' });
         }
+        // NOTE: req.user.userId is now the MongoDB ObjectId (String)
         req.user = user;
         next();
     });
 };
 
-// --- 7. API ROUTES (The "Actions") ---
+// --- 7. API ROUTES (Mongoose Implementation) ---
 
 /**
  * ## POST /register
@@ -58,15 +117,19 @@ app.post('/register', async (req, res) => {
         if (!username || !password) {
             return res.status(400).json({ message: 'Username and password are required.' });
         }
-        const [users] = await dbPool.query('SELECT * FROM users WHERE username = ?', [username]);
-        if (users.length > 0) {
+        
+        // Mongoose: Check for existing user
+        const existingUser = await User.findOne({ username });
+        if (existingUser) {
             return res.status(409).json({ message: 'Username already taken.' });
         }
+        
         const password_hash = await bcrypt.hash(password, 10);
-        await dbPool.query('INSERT INTO users (username, password_hash) VALUES (?, ?)', [
-            username,
-            password_hash
-        ]);
+        
+        // Mongoose: Create new user
+        const newUser = new User({ username, password_hash });
+        await newUser.save();
+        
         res.status(201).json({ message: 'User registered successfully!' });
     } catch (error) {
         console.error('Registration error:', error);
@@ -84,20 +147,25 @@ app.post('/login', async (req, res) => {
         if (!username || !password) {
             return res.status(400).json({ message: 'Username and password are required.' });
         }
-        const [users] = await dbPool.query('SELECT * FROM users WHERE username = ?', [username]);
-        if (users.length === 0) {
+        
+        // Mongoose: Find user
+        const user = await User.findOne({ username });
+        if (!user) {
             return res.status(401).json({ message: 'Invalid credentials' });
         }
-        const user = users[0];
+        
         const isMatch = await bcrypt.compare(password, user.password_hash);
         if (!isMatch) {
             return res.status(401).json({ message: 'Invalid credentials' });
         }
+        
+        // The ID stored in the token is the MongoDB ObjectId (user._id)
         const token = jwt.sign(
-            { userId: user.id, username: user.username },
+            { userId: user._id.toString(), username: user.username },
             JWT_SECRET,
             { expiresIn: '1h' }
         );
+        
         res.status(200).json({
             message: 'Login successful!',
             token: token,
@@ -120,7 +188,7 @@ app.post('/generate-description', async (req, res) => {
     }
 
     // ⬇️⬇️ PUT YOUR REAL API KEY HERE ⬇️⬇️
-    const GEMINI_API_KEY = 'YOUR_REAL_GEMINI_API_KEY_GOES_HERE';
+    const GEMINI_API_KEY = process.env.GEMINI_API_KEY || 'YOUR_REAL_GEMINI_API_KEY_GOES_HERE';
     const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`;
     
     const payload = {
@@ -152,14 +220,22 @@ app.post('/generate-description', async (req, res) => {
  */
 app.get('/products', async (req, res) => {
     try {
-        const [products] = await dbPool.query('SELECT * FROM products ORDER BY created_at DESC');
-        const productsWithReviews = products.map(p => ({
-            ...p,
-            sold: false,
-            reviews: p.id % 2 === 0 ? [{rating: 4, text: "Good product."}] : [{rating: 5, text: "Great quality!"}],
-            rating: p.id % 2 === 0 ? 4 : 5
-        }));
-        res.status(200).json(productsWithReviews);
+        // Mongoose: Fetch all products
+        const products = await Product.find({}).sort({ created_at: -1 });
+
+        // Rename _id to id for frontend compatibility
+        const productsFormatted = products.map(p => {
+            const product = p.toObject();
+            return {
+                ...product,
+                id: product._id.toString(), // Use the MongoDB _id as the 'id'
+                // Mock data logic for consistency
+                reviews: product.id % 2 === 0 ? [{rating: 4, text: "Good product."}] : [{rating: 5, text: "Great quality!"}],
+                rating: product.id % 2 === 0 ? 4 : 5
+            }
+        });
+
+        res.status(200).json(productsFormatted);
     } catch (error) {
         console.error('Get products error:', error);
         res.status(500).json({ message: 'Error fetching products' });
@@ -172,26 +248,98 @@ app.get('/products', async (req, res) => {
  */
 app.post('/products', authenticateToken, async (req, res) => {
     try {
+        const userId = req.user.userId; // MongoDB ObjectId string
+        
         const {
             sellerName, contactInfo, district, category,
             productName, description, price, deliveryDays,
             discount, image
         } = req.body;
 
-        // === "description" REMOVED FROM VALIDATION ===
         if (!productName || !price || !sellerName || !contactInfo || !district || !category || !deliveryDays) {
             return res.status(400).json({ message: 'All fields are required.' });
         }
 
-        const [result] = await dbPool.query(
-            'INSERT INTO products (sellerName, contactInfo, district, category, productName, description, price, deliveryDays, discount, image) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-            [sellerName, contactInfo, district, category, productName, description, price, deliveryDays, discount, image]
-        );
-        res.status(201).json({ message: 'Product added successfully!', productId: result.insertId });
+        // Mongoose: Create new product
+        const newProduct = new Product({
+            user_id: userId, // Store the seller's ObjectId
+            sellerName, contactInfo, district, category,
+            productName, description, price, deliveryDays,
+            discount, image
+        });
+        const result = await newProduct.save();
+
+        res.status(201).json({ message: 'Product added successfully!', productId: result._id.toString() });
     } catch (error) {
         console.error('Add product error:', error);
         res.status(500).json({ message: 'Error adding product' });
     }
+});
+
+/**
+ * ## GET /products/my-listings
+ * Fetches products only by the logged-in user (SECURED).
+ */
+app.get('/products/my-listings', authenticateToken, async (req, res) => {
+    try {
+        const userId = req.user.userId;
+        
+        // Mongoose: Find products by user_id
+        const products = await Product.find({ user_id: userId }).sort({ created_at: -1 });
+
+        const productsFormatted = products.map(p => {
+            const product = p.toObject();
+            return {
+                ...product,
+                id: product._id.toString(),
+                reviews: product.id % 2 === 0 ? [{rating: 4, text: "Good product."}] : [{rating: 5, text: "Great quality!"}],
+                rating: product.id % 2 === 0 ? 4 : 5
+            }
+        });
+        
+        res.status(200).json(productsFormatted);
+    } catch (error) {
+        console.error('Get my listings error:', error);
+        res.status(500).json({ message: 'Error fetching your products' });
+    }
+});
+
+/**
+ * ## DELETE /products/:productId
+ * Deletes a product, but only if it belongs to the logged-in user (SECURED).
+ */
+app.delete('/products/:productId', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const { productId } = req.params; // This is the MongoDB _id (string)
+
+    // Mongoose: Delete product by _id AND user_id
+    const result = await Product.findOneAndDelete({ 
+        _id: productId, 
+        user_id: userId 
+    });
+
+    if (!result) {
+      return res.status(404).json({ message: 'Product not found or you do not have permission to delete it.' });
+    }
+
+    res.status(200).json({ message: 'Product deleted successfully' });
+  } catch (error) {
+    console.error('Delete product error:', error);
+    res.status(500).json({ message: 'Error deleting product' });
+  }
+});
+
+
+/**
+ * ## GET /verify-token
+ * A protected route to check if a user's token is still valid.
+ */
+app.get('/verify-token', authenticateToken, (req, res) => {
+  res.status(200).json({ 
+    message: 'Token is valid', 
+    username: req.user.username 
+  });
 });
 
 /**
@@ -200,41 +348,30 @@ app.post('/products', authenticateToken, async (req, res) => {
  */
 app.get('/cart', authenticateToken, async (req, res) => {
   try {
-    const userId = req.user.userId; // We get this from the token
+    const userId = req.user.userId;
 
-    // This query joins the cart and products tables
-    // to get the full product details for each item in the cart
-    const [cartItems] = await dbPool.query(
-      `SELECT p.* FROM products p 
-       JOIN cart_items c ON p.id = c.product_id
-       WHERE c.user_id = ?`,
-      [userId]
-    );
+    // Mongoose: Find cart items and use .populate to get product details
+    const cartItems = await CartItem.find({ user_id: userId })
+        .populate('product_id');
+
+    const cartFormatted = cartItems
+        .filter(item => item.product_id !== null)
+        .map(item => {
+            const p = item.product_id.toObject();
+            return {
+                ...p,
+                id: p._id.toString()
+            };
+        });
     
-    res.status(200).json(cartItems);
+    res.status(200).json(cartFormatted);
   } catch (error) {
     console.error('Get cart error:', error);
     res.status(500).json({ message: 'Error fetching cart' });
   }
 });
 
-/**
- * ## GET /verify-token
- * A protected route to check if a user's token is still valid.
- */
-app.get('/verify-token', authenticateToken, (req, res) => {
-  // The 'authenticateToken' middleware does all the work.
-  // If the code reaches this point, the token is valid.
-  res.status(200).json({ 
-    message: 'Token is valid', 
-    username: req.user.username // Send back the username
-  });
-});
 
-
-// =======================================================
-// === THIS IS THE MISSING ENDPOINT I HAVE ADDED BACK ===
-// =======================================================
 /**
  * ## POST /cart
  * Adds a product to the logged-in user's cart.
@@ -248,25 +385,26 @@ app.post('/cart', authenticateToken, async (req, res) => {
       return res.status(400).json({ message: 'Product ID is required' });
     }
 
-    // Add the item to the database
-    await dbPool.query(
-      'INSERT INTO cart_items (user_id, product_id) VALUES (?, ?)',
-      [userId, productId]
-    );
+    const productExists = await Product.findById(productId);
+    if (!productExists) {
+        return res.status(404).json({ message: 'Product not found' });
+    }
+    
+    const newCartItem = new CartItem({
+        user_id: userId,
+        product_id: productId
+    });
+    await newCartItem.save();
 
     res.status(201).json({ message: 'Product added to cart' });
   } catch (error) {
-    // This will catch if the user tries to add the same item twice
-    if (error.code === 'ER_DUP_ENTRY') {
+    if (error.code === 11000) {
       return res.status(409).json({ message: 'Product already in cart' });
     }
     console.error('Add cart error:', error);
     res.status(500).json({ message: 'Error adding to cart' });
   }
 });
-// =======================================================
-// === END OF NEWLY ADDED CODE ===
-// =======================================================
 
 
 /**
@@ -276,14 +414,14 @@ app.post('/cart', authenticateToken, async (req, res) => {
 app.delete('/cart/:productId', authenticateToken, async (req, res) => {
   try {
     const userId = req.user.userId;
-    const { productId } = req.params; // Get ID from the URL
+    const { productId } = req.params;
 
-    const [result] = await dbPool.query(
-      'DELETE FROM cart_items WHERE user_id = ? AND product_id = ?',
-      [userId, productId]
-    );
+    const result = await CartItem.findOneAndDelete({
+      user_id: userId,
+      product_id: productId
+    });
 
-    if (result.affectedRows === 0) {
+    if (!result) {
       return res.status(404).json({ message: 'Item not found in cart' });
     }
 
@@ -294,107 +432,81 @@ app.delete('/cart/:productId', authenticateToken, async (req, res) => {
   }
 });
 
+
 /**
  * ## POST /orders
  * Creates a new order from the user's cart.
  */
 app.post('/orders', authenticateToken, async (req, res) => {
   const userId = req.user.userId;
-  let connection; 
-
+  
   try {
-    connection = await dbPool.getConnection();
-    await connection.beginTransaction();
-
-    // 1. Get cart items
-    const [cartItems] = await connection.query(
-      `SELECT p.id, p.price, p.discount FROM products p
-       JOIN cart_items c ON p.id = c.product_id
-       WHERE c.user_id = ?`,
-      [userId]
-    );
+    // 1. Get cart items and populate product details
+    const cartItems = await CartItem.find({ user_id: userId }).populate('product_id');
 
     if (cartItems.length === 0) {
-      await connection.rollback();
-      connection.release();
       return res.status(400).json({ message: 'Your cart is empty.' });
     }
-
-    // 2. Calculate total price
+    
+    // 2. Calculate total price and build order items array
     let totalPrice = 0;
-    cartItems.forEach(item => {
-      totalPrice += Math.round(item.price * (100 - item.discount) / 100);
-    });
+    const orderItems = cartItems
+        .filter(item => item.product_id !== null)
+        .map(item => {
+            const p = item.product_id;
+            const effectivePrice = Math.round(p.price * (100 - p.discount) / 100);
+            totalPrice += effectivePrice;
 
-    // 3. --- NEW: Generate a 4-digit Delivery PIN ---
+            return {
+                productName: p.productName,
+                image: p.image,
+                quantity: 1, 
+                price: effectivePrice
+            };
+        });
+
+    if (orderItems.length === 0) {
+        return res.status(400).json({ message: 'Your cart items could not be found.' });
+    }
+
+    // 3. Generate a 4-digit Delivery PIN
     const deliveryPin = Math.floor(1000 + Math.random() * 9000).toString();
 
-    // 4. Create a new order (now with the PIN)
-    const [orderResult] = await connection.query(
-      'INSERT INTO orders (user_id, total_price, delivery_pin) VALUES (?, ?, ?)',
-      [userId, totalPrice, deliveryPin]
-    );
-    const newOrderId = orderResult.insertId;
-
-    // 5. Add items to 'order_items'
-    const orderItemPromises = cartItems.map(item => {
-      const effectivePrice = Math.round(item.price * (100 - item.discount) / 100);
-      return connection.query(
-        'INSERT INTO order_items (order_id, product_id, price) VALUES (?, ?, ?)',
-        [newOrderId, item.id, effectivePrice]
-      );
+    // 4. Create a new order document
+    const newOrder = new Order({
+        user_id: userId,
+        total_price: totalPrice,
+        delivery_pin: deliveryPin,
+        items: orderItems
     });
-    await Promise.all(orderItemPromises);
+    const orderResult = await newOrder.save();
 
-    // 6. Clear the cart
-    await connection.query('DELETE FROM cart_items WHERE user_id = ?', [userId]);
+    // 5. Clear the cart
+    await CartItem.deleteMany({ user_id: userId });
 
-    // 7. Commit transaction
-    await connection.commit();
-
-    res.status(201).json({ message: 'Order placed successfully!', orderId: newOrderId });
+    res.status(201).json({ message: 'Order placed successfully!', orderId: orderResult._id.toString() });
 
   } catch (error) {
-    if (connection) await connection.rollback();
     console.error('Place order error:', error);
     res.status(500).json({ message: 'Error placing order.' });
-  } finally {
-    if (connection) connection.release();
   }
 });
 
 /**
  * ## GET /orders
- * Fetches all past orders for the logged-in user,
- * including the items in each order.
+ * Fetches all past orders for the logged-in user.
  */
 app.get('/orders', authenticateToken, async (req, res) => {
   try {
     const userId = req.user.userId;
 
-    // 1. Get all orders for this user
-    const [orders] = await dbPool.query(
-      'SELECT * FROM orders WHERE user_id = ? ORDER BY created_at DESC',
-      [userId]
-    );
+    // Mongoose: Get all orders for this user, sorted by date
+    const orders = await Order.find({ user_id: userId }).sort({ created_at: -1 });
 
-    // 2. Now, for each order, get its items
-    // We use Promise.all to run these queries in parallel
-    const fullOrders = await Promise.all(
-      orders.map(async (order) => {
-        // Get all items for this specific order, joining with the products table
-        const [items] = await dbPool.query(
-          `SELECT p.productName, p.image, oi.quantity, oi.price 
-           FROM order_items oi
-           JOIN products p ON oi.product_id = p.id
-           WHERE oi.order_id = ?`,
-          [order.id]
-        );
-
-        // Return the order with its items nested inside
-        return { ...order, items: items };
-      })
-    );
+    const fullOrders = orders.map(order => ({ 
+        ...order.toObject(), 
+        id: order._id.toString() 
+    }));
 
     res.status(200).json(fullOrders);
   } catch (error) {
@@ -406,7 +518,6 @@ app.get('/orders', authenticateToken, async (req, res) => {
 /**
  * ## POST /orders/confirm-delivery
  * This is for the "delivery boy" to confirm the delivery.
- * It checks the orderId and the deliveryPin.
  */
 app.post('/orders/confirm-delivery', async (req, res) => {
   try {
@@ -416,33 +527,22 @@ app.post('/orders/confirm-delivery', async (req, res) => {
       return res.status(400).json({ message: 'Order ID and PIN are required.' });
     }
 
-    // 1. Find the order
-    const [orders] = await dbPool.query(
-      'SELECT * FROM orders WHERE id = ?', 
-      [orderId]
-    );
+    // 1. Find and update the order
+    const order = await Order.findById(orderId);
 
-    if (orders.length === 0) {
+    if (!order) {
       return res.status(404).json({ message: 'Order not found.' });
     }
 
-    const order = orders[0];
-
-    // 2. Check if already delivered
     if (order.status === 'Delivered') {
       return res.status(400).json({ message: 'This order has already been delivered.' });
     }
 
-    // 3. Check if the PIN matches
     if (order.delivery_pin === pin) {
-      // 4. Match! Update the status
-      await dbPool.query(
-        "UPDATE orders SET status = 'Delivered' WHERE id = ?",
-        [orderId]
-      );
+      order.status = 'Delivered';
+      await order.save();
       res.status(200).json({ message: 'Order marked as Delivered!' });
     } else {
-      // 5. No match
       res.status(400).json({ message: 'Invalid Delivery PIN.' });
     }
   } catch (error) {
@@ -451,7 +551,7 @@ app.post('/orders/confirm-delivery', async (req, res) => {
   }
 });
 
-// --- 8. START THE SERVER (Must be at the very end) ---
+// --- 8. START THE SERVER ---
 app.listen(port, () => {
-    console.log(`E-Farm server listening at http://localhost:${port}`);
+    console.log(`E-Farm server listening at port ${port}`);
 });
