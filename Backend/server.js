@@ -19,11 +19,27 @@ app.use(cors());
 // --- 4. MONGODB CONNECTION & SCHEMAS ---
 
 // Use MONGODB_URI environment variable provided by Render or MongoDB Atlas
-const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/efarm_db';
+// --- 4. MONGODB CONNECTION & SCHEMAS ---
+
+// Use MONGODB_URI environment variable provided by Render or MongoDB Atlas
+const MONGODB_URI = process.env.MONGODB_URI;
+
+if (!MONGODB_URI) {
+  console.error("CRITICAL ERROR: MONGODB_URI environment variable is not set.");
+  // Exit the process to prevent the server from starting without a database
+  process.exit(1);
+}
 
 mongoose.connect(MONGODB_URI)
   .then(() => console.log('MongoDB Connected!'))
-  .catch(err => console.error('MongoDB connection error:', err));
+  .catch(err => {
+    console.error('MongoDB connection error:', err);
+    // Exit if connection to the remote DB fails
+    process.exit(1); 
+  });
+
+// Schemas (Replacing MySQL Tables)
+// ... (rest of the file remains the same)
 
 // Schemas (Replacing MySQL Tables)
 const { Schema } = mongoose;
@@ -555,3 +571,4 @@ app.post('/orders/confirm-delivery', async (req, res) => {
 app.listen(port, () => {
     console.log(`E-Farm server listening at port ${port}`);
 });
+
