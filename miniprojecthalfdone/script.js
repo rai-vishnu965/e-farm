@@ -15,7 +15,7 @@ alertOk.onclick = () => {
 // --- NEW: API BASE URL for Render Hosting ---
 // *** IMPORTANT: After deploying your backend to Render, replace 'http://127.0.0.1:3000' 
 // *** with your actual deployed backend URL (e.g., https://efarm-api-yourname.onrender.com)
-const API_BASE_URL = 'http://127.0.0.1:3000'; // Default for local testing
+const API_BASE_URL = 'https://e-farm-grx3.onrender.com'; // Default for local testing
 
 // --- NEW SECURE Gemini API Call Function ---
 async function callGeminiAPI(prompt) {
@@ -926,3 +926,4 @@ async function renderMyOrders() {
     orderListDiv.innerHTML = '<p>Error loading your orders. Please try again.</p>';
   }
 }
+
