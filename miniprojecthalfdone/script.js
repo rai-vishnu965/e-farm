@@ -12,12 +12,16 @@ alertOk.onclick = () => {
   alertOverlay.classList.add('hide');
 };
 
+// --- NEW: API BASE URL for Render Hosting ---
+// *** IMPORTANT: After deploying your backend to Render, replace 'http://127.0.0.1:3000' 
+// *** with your actual deployed backend URL (e.g., https://efarm-api-yourname.onrender.com)
+const API_BASE_URL = 'http://127.0.0.1:3000'; // Default for local testing
+
 // --- NEW SECURE Gemini API Call Function ---
 async function callGeminiAPI(prompt) {
   try {
     // Call OUR OWN server endpoint
-    // === CHANGED "localhost" TO "127.0.0.1" ===
-    const response = await fetch('http://127.0.0.1:3000/generate-description', {
+    const response = await fetch(`${API_BASE_URL}/generate-description`, { // UPDATED URL
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -133,8 +137,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // --- 2. Send Data to the Node.js Backend ---
     try {
-      // This URL was already correct
-      const response = await fetch('http://127.0.0.1:3000/register', {
+      const response = await fetch(`${API_BASE_URL}/register`, { // UPDATED URL
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -176,8 +179,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     errorEl.classList.add('hide');
 
     try {
-      // === BUG FIX: Changed "/register" to "/login" ===
-      const response = await fetch('http://127.0.0.1:3000/login', {
+      const response = await fetch(`${API_BASE_URL}/login`, { // UPDATED URL
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -218,7 +220,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   if (token) {
     try {
       // 1. Send the token to the server to be verified
-      const response = await fetch('http://127.0.0.1:3000/verify-token', {
+      const response = await fetch(`${API_BASE_URL}/verify-token`, { // UPDATED URL
         headers: { 'Authorization': `Bearer ${token}` }
       });
 
@@ -257,7 +259,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const token = localStorage.getItem('token');
     
     try {
-      const response = await fetch('http://127.0.0.1:3000/orders', {
+      const response = await fetch(`${API_BASE_URL}/orders`, { // UPDATED URL
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -355,7 +357,7 @@ async function updateCartCount() {
   }
 
   try {
-    const response = await fetch('http://127.0.0.1:3000/cart', {
+    const response = await fetch(`${API_BASE_URL}/cart`, { // UPDATED URL
       headers: { 'Authorization': `Bearer ${token}` }
     });
 
@@ -374,8 +376,8 @@ async function updateCartCount() {
 
 // === UPDATED showTab function ===
 function showTab(tab) {
-  // Added 'my-orders' to the list
-  ['marketplace', 'checkout', 'my-orders', 'about', 'faq', 'contact'].forEach(id => {
+  // Added 'my-orders' and 'my-listings' to the list
+  ['marketplace', 'checkout', 'my-orders', 'my-listings', 'about', 'faq', 'contact'].forEach(id => {
     document.getElementById(id + '-tab').style.display = (id === tab) ? 'block' : 'none';
   });
   document.querySelectorAll('nav button').forEach(btn => btn.classList.remove('active'));
@@ -385,6 +387,7 @@ function showTab(tab) {
   if (tab === 'marketplace') renderProducts();
   else if (tab === 'checkout') renderCart();
   else if (tab === 'my-orders') renderMyOrders(); // Added this line
+  else if (tab === 'my-listings') renderMyListings(); 
 }
 
 // =======================================================
@@ -402,7 +405,7 @@ async function renderCart() {
   cartListDiv.innerHTML = '<p>Loading your cart...</p>';
 
   try {
-    const response = await fetch('http://127.0.0.1:3000/cart', {
+    const response = await fetch(`${API_BASE_URL}/cart`, { // UPDATED URL
       headers: { 'Authorization': `Bearer ${token}` }
     });
 
@@ -447,7 +450,7 @@ async function renderCart() {
     // Now, add event listeners for the remove buttons
     document.querySelectorAll('.remove-from-cart-btn').forEach(btn => {
       btn.onclick = () => {
-        const productId = btn.getAttribute('data-id');
+        const productId = btn.getAttribute('data-id'); // MongoDB ID is now a string
         removeFromCart(productId);
       };
     });
@@ -469,7 +472,7 @@ async function removeFromCart(productId) {
   }
 
   try {
-    const response = await fetch(`http://127.0.0.1:3000/cart/${productId}`, {
+    const response = await fetch(`${API_BASE_URL}/cart/${productId}`, { // UPDATED URL
       method: 'DELETE',
       headers: {
         'Authorization': `Bearer ${token}`
@@ -558,8 +561,7 @@ document.getElementById('productForm').onsubmit = async function (e) {
     // --- 1. Get the token from localStorage ---
     const token = localStorage.getItem('token');
 
-    // === BUG FIX: Changed "/register" to "/products" ===
-    const response = await fetch('http://127.0.0.1:3000/products', {
+    const response = await fetch(`${API_BASE_URL}/products`, { // UPDATED URL
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
@@ -605,7 +607,7 @@ async function renderProducts() {
   let products = [];
   try {
       // 1. FETCH products from our server (This URL was already correct)
-      const response = await fetch('http://127.0.0.1:3000/products');
+      const response = await fetch(`${API_BASE_URL}/products`); // UPDATED URL
       if (!response.ok) throw new Error('Could not fetch products');
       products = await response.json();
   } catch (error) {
@@ -682,7 +684,8 @@ async function renderProducts() {
 
   Array.from(list.getElementsByClassName('buy')).forEach(btn => {
     btn.onclick = () => {
-      addToCart(parseInt(btn.getAttribute('data-id')));
+      const productId = btn.getAttribute('data-id');
+      addToCart(productId); // MongoDB ID is passed as a string
     };
   });
   updateCartCount();
@@ -698,7 +701,7 @@ function getStars(n) {
 // =======================================================
 // === NEW: Adds item to cart on the SERVER ===
 // =======================================================
-async function addToCart(id) {
+async function addToCart(id) { // 'id' is the MongoDB ObjectId string
   const token = localStorage.getItem('token');
   if (!token) {
     showCustomAlert('Please log in to add items to your cart.');
@@ -706,7 +709,7 @@ async function addToCart(id) {
   }
 
   try {
-    const response = await fetch('http://127.0.0.1:3000/cart', {
+    const response = await fetch(`${API_BASE_URL}/cart`, { // UPDATED URL
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -731,12 +734,115 @@ async function addToCart(id) {
 }
 
 // =======================================================
-// === NEW FUNCTION ADDED HERE ===
+// === NEW FUNCTION: Renders the Seller's Listings (Updated for API_BASE_URL) ===
 // =======================================================
-/**
- * ## NEW: Renders the "My Orders" page
- * Fetches and displays the user's order history.
- */
+async function renderMyListings() {
+  const listingsDiv = document.getElementById('myListingsContainer');
+  const token = localStorage.getItem('token');
+
+  if (!token) {
+    listingsDiv.innerHTML = '<p>Please log in to see your listings.</p>';
+    return;
+  }
+
+  listingsDiv.innerHTML = '<p>Loading your products...</p>';
+
+  try {
+    // Call the secured backend endpoint to get only the current user's products
+    const response = await fetch(`${API_BASE_URL}/products/my-listings`, { // UPDATED URL
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    if (!response.ok) throw new Error('Could not fetch your listings.');
+
+    const products = await response.json();
+
+    if (products.length === 0) {
+      listingsDiv.innerHTML = '<p>You have no active products listed for sale yet.</p>';
+      return;
+    }
+
+    let html = '';
+    products.forEach(p => {
+      const effectivePrice = Math.round(p.price * (100 - p.discount) / 100);
+      
+      // Use the same card structure as the marketplace, but add a delete button
+      html += `
+        <div class="product-item">
+          <div><img class="prod-image" src="${p.image || 'https://img.icons8.com/external-kmg-design-flat-kmg-design/96/000000/external-farming-agriculture-kmg-design-flat-kmg-design.png'}" alt="Product Image"/></div>
+          <div class="prod-info">
+            <div>
+              <span class="category-tag">${p.category}</span>
+              <b>${p.productName}</b>
+              <span class="district">(${p.district})</span>
+            </div>
+            <div>${p.description}</div>
+            <div>
+              <span classZ="price-tag">₹${effectivePrice.toLocaleString('en-IN')}</span>
+              ${p.discount > 0 ? `<span class="discount-tag">${p.discount}% OFF</span>` : ''}
+              <span class="delivery-tag">⏱️ ${p.deliveryDays} days delivery</span>
+            </div>
+            <div style="margin-top: 15px;">
+                <button class="delete-listing-btn" data-id="${p.id}">Delete Listing</button>
+            </div>
+          </div>
+        </div>
+      `;
+    });
+
+    listingsDiv.innerHTML = html;
+    
+    // Attach event listeners for the delete buttons
+    document.querySelectorAll('.delete-listing-btn').forEach(btn => {
+      btn.onclick = () => {
+        const productId = btn.getAttribute('data-id');
+        deleteProduct(productId);
+      };
+    });
+
+  } catch (error) {
+    console.error('Error rendering my listings:', error);
+    listingsDiv.innerHTML = '<p>Error loading your listings. Please try again.</p>';
+  }
+}
+
+// =======================================================
+// === NEW FUNCTION: Deletes a Product from the SERVER ===
+// =======================================================
+async function deleteProduct(productId) { // 'productId' is the MongoDB ObjectId string
+  if (!confirm('Are you sure you want to delete this listing? This action cannot be undone.')) {
+    return;
+  }
+  
+  const token = localStorage.getItem('token');
+  if (!token) {
+    showCustomAlert('Please log in to delete products.');
+    return;
+  }
+  
+  try {
+    const response = await fetch(`${API_BASE_URL}/products/${productId}`, { // UPDATED URL
+      method: 'DELETE',
+      headers: {
+        'Authorization': `Bearer ${token}`
+      }
+    });
+
+    const data = await response.json();
+
+    if (response.ok) {
+      showCustomAlert('Product listing deleted successfully!');
+      renderMyListings(); // Refresh the my listings tab
+      renderProducts();   // Also refresh the marketplace
+    } else {
+      showCustomAlert(data.message || 'Error deleting product.');
+    }
+  } catch (error) {
+    console.error('Error deleting product:', error);
+    showCustomAlert('Error connecting to server to delete product.');
+  }
+}
+
+
 /**
  * ## NEW: Renders the "My Orders" page
  * Fetches and displays the user's order history,
@@ -754,7 +860,7 @@ async function renderMyOrders() {
   orderListDiv.innerHTML = '<p>Loading your order history...</p>';
 
   try {
-    const response = await fetch('http://127.0.0.1:3000/orders', {
+    const response = await fetch(`${API_BASE_URL}/orders`, { // UPDATED URL
       headers: { 'Authorization': `Bearer ${token}` }
     });
     if (!response.ok) throw new Error('Could not fetch your orders.');
