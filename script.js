@@ -287,8 +287,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   };
 
-  // NOTE: Incomplete payment logic removed here to simplify checkout to COD.
-  
   // NEW: Gemini Button Event Listener
   document.getElementById('generateDescBtn').onclick = async function() {
     const btn = this;
@@ -393,7 +391,8 @@ async function renderCart() {
       throw new Error('Could not fetch cart.');
     }
 
-    const cartItems = await response.json();
+    // NOTE: The API now automatically filters out sold products
+    const cartItems = await response.json(); 
 
     if (cartItems.length === 0) {
       cartListDiv.innerHTML = '<p>Your cart is empty.</p>';
@@ -906,6 +905,7 @@ async function renderMyOrders() {
     orderListDiv.innerHTML = '<p>Error loading your orders. Please try again.</p>';
   }
 }
+
 
 // NEW: Handle Contact Form Submission (Prevent reload and show alert)
 document.getElementById('contactForm').onsubmit = function(e) {
