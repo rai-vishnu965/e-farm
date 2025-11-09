@@ -33,7 +33,7 @@
     <div id="message-area" class="message" style="display: none;"></div>
     <form id="delivery-form">
       <label>Order ID:
-        <input type="text" id="orderId" placeholder="e.g., 1001" required>
+        <input type="text" id="orderId" placeholder="e.g., MongoDB ID" required>
       </label>
       <label>Delivery PIN:
         <input type="text" id="pin" placeholder="4-digit PIN" required>
@@ -45,6 +45,9 @@
   <script>
     const form = document.getElementById('delivery-form');
     const messageArea = document.getElementById('message-area');
+    
+    // --- NEW: API BASE URL ---
+    const API_BASE_URL = 'http://127.0.0.1:3000'; // REPLACE THIS WITH DEPLOYED URL AFTER HOSTING
 
     form.onsubmit = async (e) => {
       e.preventDefault();
@@ -54,7 +57,7 @@
       messageArea.style.display = 'none';
 
       try {
-        const response = await fetch('http://127.0.0.1:3000/orders/confirm-delivery', {
+        const response = await fetch(`${API_BASE_URL}/orders/confirm-delivery`, { // UPDATED URL
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ orderId, pin })
